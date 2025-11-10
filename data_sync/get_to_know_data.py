@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import datetime
 from openpyxl import load_workbook
+from pathlib import Path
 
 def load_data(file_path):
     """Load data from a CSV file into a pandas DataFrame."""
@@ -383,16 +384,20 @@ def add_gear_distribution_column(df, gear_distribution_df, time_col='tt_s', lap_
     return df
 
 if __name__ == "__main__":
+    # Get the directory where this script is located
+    script_dir = Path(__file__).parent
+    data_dir = script_dir / "Data"
+    
     # Load the data
-    data_file = 'Project/Data/wetransfer_sub-technique-identification_2025-09-26_0821/Ski pole data/BIA24-3NR_1hz.csv'  # Update with your data file path
-    df = load_data(data_file)
+    data_file = data_dir / "Ski pole data" / "BIA24-3NR_1hz.csv"
+    df = load_data(str(data_file))
 
-    data_file_gnss = 'Project/Data/wetransfer_sub-technique-identification_2025-09-26_0821/GNSS data/BIA24-3_tcx.xlsx'
-    df_gnss = load_xslsx_data_with_row_color_as_column_values(data_file_gnss, sheet_name=["NR", "WR"])["NR"]
+    data_file_gnss = data_dir / "GNSS data" / "BIA24-3_tcx.xlsx"
+    df_gnss = load_xslsx_data_with_row_color_as_column_values(str(data_file_gnss), sheet_name=["NR", "WR"])["NR"]
 
     print(df_gnss['RowColor'].value_counts())
-    gear_distribution_file = 'Project/Data/wetransfer_sub-technique-identification_2025-09-26_0821/Gear distribution 3d.xlsx' 
-    df_gear_distribution = load_gear_distribution_data(gear_distribution_file, sheet_name="BIA24-3")
+    gear_distribution_file = data_dir / "Gear distribution 3d.xlsx"
+    df_gear_distribution = load_gear_distribution_data(str(gear_distribution_file), sheet_name="BIA24-3")
 
     # Set start time to zero
     # df = set_start_time_to_zero(df, time_col='tt_s')
@@ -403,7 +408,7 @@ if __name__ == "__main__":
     df_merged = keep_rows_of_colour(df_merged, color_column='RowColor', color_value='FFFFFF')
     df_merged = add_lap_column(df_merged, time_col='tt_s')
     df_merged = add_gear_distribution_column(df_merged, df_gear_distribution, time_col='tt_s', lap_col='Lap')
-    save_df_to_csv(df_merged, '/Users/gustafbjorn/Documents/Chalmers/CAS/TRA300 Digitalization in sports/Project/Project/Playing around with data/merged_data_with_gear.csv')
+    #save_df_to_csv(df_merged, '/Users/gustafbjorn/Documents/Chalmers/CAS/TRA300 Digitalization in sports/Project/Project/Playing around with data/merged_data_with_gear.csv')
     print(df_merged['Lap'].value_counts())
     print(df_merged.head())
     print(f"Merged DataFrame shape: {df_merged.shape}")
