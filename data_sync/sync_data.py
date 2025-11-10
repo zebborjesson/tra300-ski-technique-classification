@@ -97,6 +97,7 @@ def add_lap_column(df, time_col='tt_s', gap_threshold=5):
 
 def time_to_unix(df, time_col='tt_s'):
     """Convert time column to Unix timestamp."""
+    df = df.copy()  # Create explicit copy to avoid SettingWithCopyWarning
     df[time_col] = pd.to_datetime(df[time_col]).astype(np.int64) // 10**9
     return df
 
@@ -252,15 +253,23 @@ def process_all_skiers_like_single(
     gear_book = load_gear_distribution_data(gear_path, sheet_name=None)  # dict {rider_id: df}
     gear_sheet_names = set(gear_book.keys())
 
-    # 2) find GNSS files for rider IDs (e.g., BIA24-3_tcx.xlsx)
-    gnss_files = sorted(gnss_path.glob("BIA24-*_tcx.xlsx"))
+    # 2) find GNSS files for rider IDs (e.g., BIA24-3_tcx.xlsx or "BIA24-14 tcx.xlsx")
+    gnss_files_with_underscore = sorted(gnss_path.glob("BIA24-*_tcx.xlsx"))
+    gnss_files_with_space = sorted(gnss_path.glob("BIA24-* tcx.xlsx"))
+    
+    # Combine both patterns, removing duplicates
+    all_gnss_files = list(set(gnss_files_with_underscore + gnss_files_with_space))
+    
     id_regex = re.compile(r"(BIA24-\d+)")
 
     riders = {}
-    for f in gnss_files:
+    for f in all_gnss_files:
         m = id_regex.search(f.name)
         if m:
-            riders[m.group(1)] = f
+            rider_id = m.group(1)
+            # Prefer _tcx.xlsx files if both exist
+            if rider_id not in riders or "_tcx" in f.name:
+                riders[rider_id] = f
 
     print(f"Found {len(riders)} riders:", sorted(riders.keys()))
 
@@ -291,7 +300,7 @@ def process_all_skiers_like_single(
             if "ns1:Time" not in df_gnss.columns:
                 print(f"[WARN] {rider_id} {variant}: 'ns1:Time' not found, skipping.")
                 continue
-            time_to_unix(df_gnss, time_col="ns1:Time")
+            df_gnss = time_to_unix(df_gnss, time_col="ns1:Time")
 
             # --- Load ski pole 1 Hz file for this rider+variant ---
             # match common patterns, e.g., BIA24-3NR_1hz.csv / BIA24-3WR_1hz.csv
@@ -328,12 +337,19 @@ def process_all_skiers_like_single(
 
 
 if __name__ == "__main__":
+    # Get the directory where this script is located
+    script_dir = Path(__file__).parent
+    
+    # Define paths relative to the script location
+    data_dir = script_dir / "Data"
+    output_dir = script_dir / "outputs"
+    
     process_all_skiers_like_single(
-        base_dir="Project/Playing around with data/Data",
+        base_dir=str(data_dir),
         gnss_dir="GNSS data",
         pole_dir="Ski pole data",
         gear_xlsx="Gear distribution 3d.xlsx",
-        output_dir="Project/Playing around with data/outputs",
+        output_dir=str(output_dir),
         color_keep="FFFFFF",
         tolerance_sec=1,
         drop_unmatched=True
