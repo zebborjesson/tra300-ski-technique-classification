@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from openpyxl import load_workbook
 import re
 from pathlib import Path
-import pandas as pd
 
 # ---------- A) Functions for single skier data processing ----------
 def load_data(file_path):
@@ -348,7 +347,7 @@ if __name__ == "__main__":
         base_dir=str(data_dir),
         gnss_dir="GNSS data",
         pole_dir="Ski pole data",
-        gear_xlsx="Gear distribution 3d.xlsx",
+        gear_xlsx="Gear distribution 3d_new.xlsx",
         output_dir=str(output_dir),
         color_keep="FFFFFF",
         tolerance_sec=1,

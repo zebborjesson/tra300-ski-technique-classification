@@ -388,11 +388,14 @@ if __name__ == "__main__":
     script_dir = Path(__file__).parent
     data_dir = script_dir / "Data"
     
+    ski_pole_file = "BIA24-3NR_1hz.csv"
+    GNSS_file = "BIA24-3_tcx.xlsx"
+    
     # Load the data
-    data_file = data_dir / "Ski pole data" / "BIA24-3NR_1hz.csv"
+    data_file = data_dir / "Ski pole data" / ski_pole_file
     df = load_data(str(data_file))
 
-    data_file_gnss = data_dir / "GNSS data" / "BIA24-3_tcx.xlsx"
+    data_file_gnss = data_dir / "GNSS data" / GNSS_file
     df_gnss = load_xslsx_data_with_row_color_as_column_values(str(data_file_gnss), sheet_name=["NR", "WR"])["NR"]
 
     print(df_gnss['RowColor'].value_counts())
