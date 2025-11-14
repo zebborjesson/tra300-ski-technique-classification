@@ -30,6 +30,9 @@ wheels/
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
 
+# Plots
+plots/
+
 # IPython
 profile_default/
 ipython_config.py
