@@ -100,6 +100,121 @@ def time_to_unix(df, time_col='tt_s'):
     df[time_col] = pd.to_datetime(df[time_col]).astype(np.int64) // 10**9
     return df
 
+def resample_to_seconds(df, tcol, vcol):
+    """
+    Resample a variable to 1 Hz with interpolation.
+    - Converts timestamps to datetime seconds (floor)
+    - Removes duplicates
+    - Resamples to 1 Hz and interpolates missing values
+    """
+    # Convert to datetime (floor to seconds avoids float rounding)
+    t = pd.to_datetime(df[tcol], unit='s').dt.floor('s')
+
+    # Build a Series
+    ts = pd.Series(df[vcol].values, index=t).sort_index()
+
+    # Remove duplicates via mean
+    ts = ts.groupby(level=0).mean()
+
+    # Resample to 1Hz
+    ts = (
+        ts.resample('1s')          # lowercase 's' avoids warnings
+          .asfreq()                # create missing timestamps
+          .interpolate('time')     # fill gaps nicely
+    )
+
+    # Safety check
+    if ts.index.has_duplicates:
+        raise ValueError("Duplicate timestamps after resample — unexpected.")
+
+    return ts
+
+def estimate_offset_by_xcorr_multi(
+    pole_df, gnss_df,
+    pole_t='tt_s', gnss_t='ns1:Time',
+    pole_cols=('altitude_m', 'latitude_deg', 'longitude_deg'),
+    gnss_cols=('ns1:AltitudeMeters', 'ns1:LatitudeDegrees', 'ns1:LongitudeDegrees'),
+    max_lag_sec=120
+):
+    """
+    Estimate time offset between POLE and GNSS using multi-channel cross-correlation.
+    Channels used: altitude, latitude, longitude.
+    
+    Returns
+    -------
+    best_lag : int (seconds)
+        If best_lag > 0: POLE is behind → shift POLE forward.
+        If best_lag < 0: POLE is ahead  → shift POLE backward.
+    """
+
+    if len(pole_cols) != len(gnss_cols):
+        raise ValueError("pole_cols and gnss_cols must be the same length.")
+
+    # --- 1) Resample all channels ---
+    pole_series = []
+    gnss_series = []
+
+    for pcol, gcol in zip(pole_cols, gnss_cols):
+        sp = resample_to_seconds(pole_df, pole_t, pcol)
+        sg = resample_to_seconds(gnss_df, gnss_t, gcol)
+        pole_series.append(sp)
+        gnss_series.append(sg)
+
+    # --- 2) Compute common time index ---
+    idx = pole_series[0].index
+    for s in pole_series[1:] + gnss_series:
+        idx = idx.intersection(s.index)
+
+    idx = idx.sort_values().unique()
+
+    if len(idx) < 20:
+        raise ValueError("Not enough overlapping timestamps to compute lag.")
+
+    # --- 3) Build matrices (T, C) and z-normalize each channel ---
+    pole_mat = []
+    gnss_mat = []
+
+    for sp, sg in zip(pole_series, gnss_series):
+        sp = sp.loc[idx].astype(float)
+        sg = sg.loc[idx].astype(float)
+
+        # Z-normalize
+        sp = (sp - sp.mean()) / sp.std(ddof=0)
+        sg = (sg - sg.mean()) / sg.std(ddof=0)
+
+        pole_mat.append(sp.values)
+        gnss_mat.append(sg.values)
+
+    pole_mat = np.stack(pole_mat, axis=1)  # shape (T, C)
+    gnss_mat = np.stack(gnss_mat, axis=1)
+
+    # --- 4) Cross-correlation over lags ---
+    T = pole_mat.shape[0]
+    C = pole_mat.shape[1]
+    max_lag = min(max_lag_sec, T // 2)
+
+    lags = np.arange(-max_lag, max_lag + 1)
+    xcorr_values = []
+
+    for L in lags:
+        if L < 0:
+            A = pole_mat[-L:, :]
+            B = gnss_mat[:T + L, :]
+        elif L > 0:
+            A = pole_mat[:T - L, :]
+            B = gnss_mat[L:, :]
+        else:  # L == 0
+            A = pole_mat
+            B = gnss_mat
+
+        # mean correlation across channels
+        corr = (A * B).sum(axis=0) / A.shape[0]  # correlation per channel
+        xcorr_values.append(corr.mean())        # average correlation across channels
+
+    best_lag = int(lags[int(np.argmax(xcorr_values))])
+    return best_lag
+
+
 def add_gear_distribution_column(df, gear_distribution_df, time_col='tt_s', lap_col='Lap'):
     """Add a gear distribution column to the DataFrame based on lap and time within lap.
     If gear is None/empty, the previous gear value is carried forward."""
@@ -311,12 +426,28 @@ def process_all_skiers_like_single(
                 continue
             pole_file = pole_candidates[0]
             df_pole = load_data(str(pole_file))
+            df_pole["Variant"] = variant 
+            # --- Fix time offset ---
+            try:
+                estimated_lag = estimate_offset_by_xcorr_multi(
+                    df_pole, df_gnss,
+                    pole_t="tt_s", gnss_t="ns1:Time",
+                    pole_cols=('latitude_deg', 'longitude_deg'),
+                    gnss_cols=('ns1:LatitudeDegrees', 'ns1:LongitudeDegrees'),
+                    max_lag_sec=120
+                )
+                # Apply the estimated lag
+                df_pole['tt_s'] = df_pole['tt_s'] + estimated_lag
+                print(f"[INFO] {rider_id} {variant}: Applied time offset of {estimated_lag} seconds.")
+            except Exception as e:
+                print(f"[WARN] {rider_id} {variant}: Could not estimate time offset ({e}). Proceeding without offset.")
+
 
             # --- Merge on time ---
             df_merged = merge_two_dataframes_on_time(
                 df_pole, df_gnss, time_col_1="tt_s", time_col_2="ns1:Time", tolerance=tolerance_sec
             )
-
+            df_merged["Variant"] = variant
             # keep only rows that matched a GNSS record if wanted
             if drop_unmatched:
                 df_merged = df_merged.dropna(subset=["ns1:Time"]).copy()
