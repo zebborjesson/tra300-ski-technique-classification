@@ -399,7 +399,7 @@ if __name__ == "__main__":
     df_gnss = load_xslsx_data_with_row_color_as_column_values(str(data_file_gnss), sheet_name=["NR", "WR"])["NR"]
 
     print(df_gnss['RowColor'].value_counts())
-    gear_distribution_file = data_dir / "Gear distribution 3d.xlsx"
+    gear_distribution_file = data_dir / "Gear distribution 3d_new.xlsx"
     df_gear_distribution = load_gear_distribution_data(str(gear_distribution_file), sheet_name="BIA24-3")
 
     # Set start time to zero
